@@ -42,8 +42,11 @@ def process_workbook(source, checklist, output_dir, *, sheet=None, columns=TAXA_
     source, output_dir = Path(source), Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     book = load_workbook(source, read_only=True, data_only=True)
-    rows = book[sheet] if sheet else book.worksheets[0]
-    data = list(rows.iter_rows(values_only=True))
+    try:
+        rows = book[sheet] if sheet else book.worksheets[0]
+        data = list(rows.iter_rows(values_only=True))
+    finally:
+        book.close()  # read-only workbooks keep the file open; Windows would refuse to move or delete it.
     header = [_text(h) for h in data[0]]
     missing = [c for c in (columns['genus'], columns['species']) if c not in header]
     if missing:
