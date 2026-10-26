@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+# WCVP releases and local indexes are downloaded/built by each user.
+wcvp*.zip
+!tests/fixtures/wcvp-mini.zip
+data/
+*.sqlite
+*.partial
+# Results of real collections stay outside the repository.
+output/
+outputs/
+*-powo-review.xlsx
+*-powo-import.xlsx
