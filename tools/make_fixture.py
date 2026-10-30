@@ -14,9 +14,10 @@ from powo_nomenclature.normalize import epithet_key, genus_key  # noqa: E402
 # Species whose every name (all ranks and authors) is kept, plus genera kept whole for spelling searches.
 SPECIES = {('micromeria', 'filiformis'), ('veronica', 'micrantha'), ('xanthium', 'sallentii'), ('xanthium', 'vayredae'),
            ('crataegus', 'brevispina'), ('crataegus', 'monogyna'), ('salvia', 'officinalis'), ('erigeron', 'barcinonensis'),
-           ('fumaria', 'queri'), ('mentha', 'rotundifolia'), ('stellaria', 'media'), ('chaerophyllum', 'aureum')}
+           ('fumaria', 'queri'), ('mentha', 'rotundifolia'), ('stellaria', 'media'), ('chaerophyllum', 'aureum'),
+           ('cerastium', 'brachypetalum'), ('euphrasia', 'alpina'), ('carduus', 'nuriae')}
 GENERA = {'calamintha'}
-PREFIXES = {('viola', 'ro')}
+PREFIXES = {('viola', 'ro'), ('pinguicula', 'el'), ('pinguicula', 'lo'), ('pinguicula', 'ge')}
 
 
 def read(archive, member):

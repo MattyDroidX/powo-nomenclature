@@ -62,8 +62,17 @@ def _page(checklist, original, notes):
     return ''
 
 
-def resolve(checklist, match, *, checked_at=None, texts=TEXTS):
-    """Fill the twelve POWO fields for a Match; nothing is returned for a name not found."""
+def _species_author(checklist, accepted):
+    rows = [r for r in checklist.find(accepted['genus_key'], accepted['species_key']) if r['taxon_status'] == 'Accepted']
+    return rows[0]['taxon_authors'] if rows else ''
+
+
+def resolve(checklist, match, *, checked_at=None, texts=TEXTS, species_author_for_infraspecific=False):
+    """Fill the twelve POWO fields for a Match; nothing is returned for a name not found.
+
+    For an accepted infraspecific name, powo_author is left empty (the infraspecific author goes to
+    powo_infra_author) unless species_author_for_infraspecific asks for the species author.
+    """
     notes, original = [], match.original
     if original is None:
         return Resolution({}, notes=['no WCVP name'], review=True)
@@ -94,7 +103,7 @@ def resolve(checklist, match, *, checked_at=None, texts=TEXTS):
         notes.append('WCVP lists no native area' + (f"; introduced into: {', '.join(introduced)}" if introduced else ''))
     values.update({
         'powo_family': accepted['family'], 'powo_genus': accepted['genus'], 'powo_specific_epithet': accepted['species'],
-        'powo_author': '' if infraspecific else accepted['taxon_authors'],
+        'powo_author': (_species_author(checklist, accepted) if species_author_for_infraspecific else '') if infraspecific else accepted['taxon_authors'],
         'powo_infra_rank': accepted['infraspecific_rank'] if infraspecific else '',
         'powo_infra_epithet': accepted['infraspecies'] if infraspecific else '',
         'powo_infra_author': accepted['taxon_authors'] if infraspecific else '',

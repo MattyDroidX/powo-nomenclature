@@ -20,7 +20,7 @@ Python 3.11+, no required dependencies; the `excel` extra adds spreadsheet suppo
 ```sh
 python -m pip install "powo-nomenclature[excel]"
 powo-nomenclature download wcvp-2026-06.zip        # ~85 MB from Kew
-powo-nomenclature index wcvp-2026-06.zip wcvp.sqlite  # ~480 MB local index, built once
+powo-nomenclature index wcvp-2026-06.zip wcvp.sqlite  # ~525 MB local index, built once
 ```
 
 Download a new release when Kew publishes one and build a new index; the release label is recorded in every result.
@@ -56,7 +56,20 @@ never modified:
 - `*-powo-import.xlsx` (when the input has an `id` column): `id`, `revision` and the twelve POWO fields, only for
   rows that need no review, filling only empty fields. In Taxa, import it with "fill only empty fields".
 
-Use `--include-review` to add the flagged rows and `--overwrite` to replace values already filled.
+Use `--include-review` to add the flagged rows, `--overwrite` to replace values already filled and
+`--species-author-for-infraspecific` to put the species author in `powo_author` when the accepted name is
+infraspecific (by default it stays empty and the author goes to `powo_infra_author`).
+
+## Audit a spreadsheet already filled
+
+```sh
+powo-nomenclature verify filled.xlsx --index wcvp.sqlite --output-dir results --lang pt
+```
+
+For POWO fields copied by hand or produced by another tool, `*-powo-verify.xlsx` lists, per row: page identifiers
+that do not exist, links that are not the page of the name as written, accepted-name fields filled for unplaced names
+(which have no accepted name), names WCVP does not accept, links leading to another accepted name, and family or
+native areas that differ from WCVP.
 
 ## Rules
 
@@ -65,10 +78,12 @@ Use `--include-review` to add the flagged rows and `--overwrite` to replace valu
 | `powo_url`, `powo_status`, `powo_checked_at` | the name **as written** (its own POWO page, even when it is a synonym) |
 | `powo_family`, `powo_genus`, `powo_specific_epithet`, `powo_author`, `powo_infra_rank`, `powo_infra_epithet`, `powo_infra_author`, `powo_native`, `powo_synonyms` | the **accepted** name |
 
-Matching, from most to least certain: exact name (`exact`); the species when the form/variety is not in WCVP
-(`species-fallback`); a different rank with the same epithet (`infra-rank-variant`); spelling rules such as æ/œ,
+Matching, from most to least certain: exact name (`exact`, including names WCVP lists at historical ranks); a
+different rank with the same epithet (`infra-rank-variant`); the closest infraspecific spelling within the species
+(`infra-fuzzy`); the species when the form/variety is not in WCVP (`species-fallback`); spelling rules such as æ/œ,
 glued hybrid signs and Latin endings (`orthographic`); the closest epithet in the genus (`fuzzy`); the closest genus
-(`fuzzy-genus`). Names with several WCVP homonyms are decided by author or reported. Historical ranks (*proles*,
+(`fuzzy-genus`). Names with several WCVP homonyms are decided by author or reported; names with no match list the
+nearest WCVP spellings in the notes without choosing one. Historical ranks (*proles*,
 *lusus*), invalid, illegitimate and unplaced names, and every result other than `exact`/`species-fallback`, are marked
 for review. Native areas are WCVP areas where the taxon is not introduced; synonyms are grouped as homotypic and
 heterotypic with their place of publication.

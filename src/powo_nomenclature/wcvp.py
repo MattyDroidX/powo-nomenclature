@@ -14,7 +14,7 @@ from .normalize import epithet_key, genus_key, rank_key
 WCVP_URL = 'https://sftp.kew.org/pub/data-repositories/WCVP/wcvp.zip'
 CITATION = ('Govaerts R (ed.). WCVP: World Checklist of Vascular Plants. Facilitated by the Royal Botanic '
             'Gardens, Kew. https://doi.org/10.34885/egs6-cp24. Licensed under CC BY 3.0.')
-INDEX_SCHEMA = '1'
+INDEX_SCHEMA = '2'
 _NAME_COLUMNS = ('plant_name_id', 'ipni_id', 'powo_id', 'taxon_rank', 'taxon_status', 'family', 'genus', 'species',
                  'species_hybrid', 'infraspecific_rank', 'infraspecies', 'taxon_name', 'taxon_authors',
                  'accepted_plant_name_id', 'homotypic_synonym', 'place_of_publication', 'volume_and_page',
@@ -82,6 +82,8 @@ def build_index(source, target, *, version=None):
             CREATE UNIQUE INDEX names_id ON names(plant_name_id);
             CREATE INDEX names_name ON names(genus_key, species_key, infra_key);
             CREATE INDEX names_accepted ON names(accepted_plant_name_id);
+            CREATE INDEX names_powo ON names(powo_id);
+            CREATE INDEX names_ipni ON names(ipni_id);
             CREATE INDEX distribution_id ON distribution(plant_name_id);
         """)
         db.executemany('INSERT INTO meta VALUES (?, ?)', [
@@ -105,7 +107,7 @@ class Checklist:
         self.db.row_factory = sqlite3.Row
         self.meta = dict(self.db.execute('SELECT key, value FROM meta'))
         if self.meta.get('schema') != INDEX_SCHEMA:
-            raise ValueError('Index schema differs from this version; rebuild the index.')
+            raise ValueError('This index was built by another version; rebuild it: powo-nomenclature index WCVP_ZIP NEW_INDEX')
         self._genera = None
         self._species = {}
 
@@ -135,6 +137,16 @@ class Checklist:
         return [dict(row) for row in self.db.execute(
             'SELECT * FROM names WHERE accepted_plant_name_id = ? AND plant_name_id != ? AND taxon_status = ?',
             (accepted_id, accepted_id, 'Synonym'))]
+
+    def infra_keys(self, genus, species):
+        return [row[0] for row in self.db.execute(
+            'SELECT DISTINCT infra_key FROM names WHERE genus_key = ? AND species_key = ? AND infra_key != ""', (genus, species))]
+
+    def by_page(self, page_id):
+        """WCVP row of a POWO page / IPNI identifier such as 77283132-1 (None when unknown)."""
+        row = self.db.execute('SELECT * FROM names WHERE powo_id = ? OR ipni_id = ? ORDER BY powo_id = ? DESC LIMIT 1',
+                              (page_id, page_id, page_id)).fetchone()
+        return dict(row) if row else None
 
     def native_areas(self, plant_name_id):
         return sorted({row[0] for row in self.db.execute(

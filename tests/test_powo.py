@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from datetime import date
 from pathlib import Path
 
-from powo_nomenclature import Checklist, NameQuery, build_index, match_name, resolve
+from powo_nomenclature import Checklist, NameQuery, build_index, match_name, resolve, verify
 from powo_nomenclature.cli import main
 from powo_nomenclature.normalize import author_similarity, clean_infra, epithet_key, epithet_variants, fold, genus_key
 
@@ -127,6 +127,55 @@ class ChecklistTests(unittest.TestCase):
         self.assertTrue(match.review)
         self.assertIn('no decisive author', '; '.join(match.notes))
 
+    def test_comparison_with_an_ai_filled_sheet_led_to_these_rules(self):
+        # Spelling slips in the variety epithet are corrected within the species, never silently.
+        match, _ = self.run_name('Cerastium', 'brachypetalum', 'var', 'eriocarlon')
+        self.assertEqual((match.method, match.review, match.original['taxon_name']), ('infra-fuzzy', True, 'Cerastium brachypetalum var. eriocaulon'))
+        # WCVP lists some names at historical ranks: the exact name wins, and it is still reviewed.
+        match, _ = self.run_name('Stellaria', 'media', 'proles', 'catalaunica')
+        self.assertEqual((match.method, match.review, match.original['taxon_name']), ('exact', True, 'Stellaria media proles catalaunica'))
+        # The author decides between homonyms: «Lamk.» is Lamarck, the accepted name, not the synonym of Bartsia.
+        match, result = self.run_name('Euphrasia', 'alpina', author='Lamk.')
+        self.assertEqual((match.original['taxon_authors'], result.accepted_name), ('Lam.', 'Euphrasia alpina'))
+        # Nothing found: the nearest spellings are offered to the reviewer, none is chosen.
+        match, result = self.run_name('Pinguicula', 'eliasii')
+        self.assertEqual((match.method, result.values), ('none', {}))
+        self.assertIn('Pinguicula eliae', next(n for n in match.notes if n.startswith('closest WCVP names')))
+
+    def test_species_author_for_infraspecific_names_is_an_option(self):
+        match, _ = self.run_name('Micromeria', 'filiformis', 'var.', 'glandulosa')
+        default = resolve(self.checklist, match).values['powo_author']
+        species = resolve(self.checklist, match, species_author_for_infraspecific=True).values['powo_author']
+        self.assertEqual(default, '')
+        self.assertEqual(species, [r['taxon_authors'] for r in self.checklist.find('micromeria', 'filiformis') if r['taxon_status'] == 'Accepted'][0])
+
+    def test_verify_flags_what_an_audit_should_catch(self):
+        query = NameQuery('Carduus', 'nuriæ')
+        unplaced = self.checklist.find('carduus', 'nuriae')[0]
+        issues = verify(self.checklist, query, {'powo_genus': 'Carduus', 'powo_specific_epithet': 'nuriae',
+                                                'powo_url': url(unplaced['powo_id'])})
+        self.assertEqual([i.code for i in issues], ['unplaced_has_accepted'])
+        issues = verify(self.checklist, NameQuery('Veronica', 'micrantha'),
+                        {'powo_url': url('99999999-9'), 'powo_genus': 'Veronica', 'powo_specific_epithet': 'inventada'})
+        self.assertEqual({i.code for i in issues}, {'unknown_page', 'accepted_not_accepted'})
+        issues = verify(self.checklist, NameQuery('Micromeria', 'filiformis', infra_rank='var.', infra_epithet='glandulosa'),
+                        {'powo_url': url('812305-1'), 'powo_genus': 'Micromeria', 'powo_specific_epithet': 'filiformis',
+                         'powo_infra_rank': 'subsp.', 'powo_infra_epithet': 'filiformis'}, lang='pt')
+        self.assertEqual({i.code for i in issues}, {'link_not_name_as_written', 'link_accepted_mismatch'})
+        self.assertIn('Veronica micrantha', issues[0].message)
+        # The tool's own result passes its own audit.
+        match, result = self.run_name('Micromeria', 'filiformis', 'var.', 'glandulosa')
+        self.assertEqual(verify(self.checklist, match.query, result.values), [])
+
+    def test_indexes_from_another_version_are_refused_with_the_command_to_rebuild(self):
+        import sqlite3
+        old = Path(self.tmp.name) / 'old.sqlite'
+        with sqlite3.connect(old) as db:
+            db.execute('CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)')
+            db.execute("INSERT INTO meta VALUES ('schema', '1')")
+        with self.assertRaisesRegex(ValueError, 'rebuild it: powo-nomenclature index'):
+            Checklist(old)
+
     def test_cli_prints_json(self):
         out = io.StringIO()
         with redirect_stdout(out):
@@ -172,6 +221,22 @@ class ExcelTests(unittest.TestCase):
         self.assertEqual(sheets.sheetnames, ['Resultados', 'Diferenças', 'Fonte'])
         differences = list(sheets['Diferenças'].iter_rows(values_only=True))
         self.assertEqual([(r[3], r[4], r[5]) for r in differences[1:]], [('powo_family', 'Scrophulariaceae', 'Plantaginaceae')])
+
+    def test_verify_workbook_lists_issues_per_row(self):
+        from openpyxl import Workbook, load_workbook
+        from powo_nomenclature.excel import verify_workbook
+        source = Path(self.tmp.name) / 'filled.xlsx'
+        book = Workbook()
+        book.active.append(['id', 'porto_genus', 'porto_specific_epithet', 'powo_genus', 'powo_specific_epithet', 'powo_url'])
+        book.active.append(['ok', 'Veronica', 'micrantha', 'Veronica', 'micrantha', url('812305-1')])
+        book.active.append(['bad', 'Veronica', 'micrantha', 'Veronica', 'micrantha', url('99999999-9')])
+        book.active.append(['empty', 'Veronica', 'micrantha', '', '', ''])
+        book.save(source)
+        with Checklist(self.index) as checklist:
+            path, codes, checked = verify_workbook(source, checklist, Path(self.tmp.name) / 'out', lang='pt')
+        self.assertEqual((checked, dict(codes)), (2, {'unknown_page': 1}))
+        rows = list(load_workbook(path)['Problemas'].iter_rows(values_only=True))
+        self.assertEqual([(r[1], r[3]) for r in rows[1:]], [('bad', 'unknown_page')])
 
 
 if __name__ == '__main__':

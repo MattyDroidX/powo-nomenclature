@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.0a2 — unreleased
+
+Lessons from comparing the results with a spreadsheet filled with the help of a general-purpose AI:
+
+- Infraspecific names: the exact name is tried first, also at historical ranks that WCVP lists
+  (*Stellaria media* proles *catalaunica*); then the same epithet at another rank; then the closest spelling of the
+  infraspecific epithet within the species (`infra-fuzzy`, reviewed) before falling back to the species.
+- Names with no match list the nearest WCVP spellings in the notes (for example *Pinguicula eliae*), without choosing.
+- `verify` command and `verify()` function audit POWO fields already filled by hand or by another tool: unknown page
+  identifiers, links that are not the page of the name as written, accepted-name fields on unplaced names, names
+  that WCVP does not accept, links leading to another accepted name, family and native areas.
+- `--species-author-for-infraspecific`: fill `powo_author` with the species author when the accepted name is
+  infraspecific (default unchanged: empty).
+- The index now has lookups by POWO/IPNI identifier (schema 2). **Rebuild indexes made with 0.1.0a1** with
+  `powo-nomenclature index WCVP_ZIP NEW_INDEX`; old ones are refused with that instruction.
+
 ## 0.1.0a1 — unreleased
 
 - Local WCVP index (`download`, `index`) with the release label, source SHA-256 and citation recorded in every run.

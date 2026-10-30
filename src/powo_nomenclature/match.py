@@ -24,7 +24,7 @@ class NameQuery:
 class Match:
     """original is the WCVP row of the name as written (None when nothing was found).
 
-    method: exact, infra-rank-variant, species-fallback, historical-rank, orthographic, fuzzy, fuzzy-genus or none.
+    method: exact, infra-rank-variant, infra-fuzzy, species-fallback, historical-rank, orthographic, fuzzy,\n    fuzzy-genus or none.
     review: True whenever a person should confirm the choice before it is used.
     """
     query: NameQuery
@@ -71,6 +71,16 @@ def _species_level(checklist, genus, species, author, notes, *, fuzzy_cutoff):
     return [], 'none', 0.0
 
 
+def _hints(checklist, genus, species, cutoff=0.6):
+    """Nearest WCVP spellings shown to the reviewer; none is chosen."""
+    if genus in set(checklist.genera()):
+        close = get_close_matches(species, checklist.species_keys(genus), n=3, cutoff=cutoff)
+        names = [f'{genus.capitalize()} {epithet}' for epithet in close]
+    else:
+        names = [g.capitalize() for g in get_close_matches(genus, checklist.genera(), n=3, cutoff=cutoff)]
+    return [f'closest WCVP names, not chosen: {", ".join(names)}'] if names else []
+
+
 def match_name(checklist, query, *, fuzzy_cutoff=0.85, review_species_fallback=False):
     """Find the WCVP row for a name as written. Only exact and documented species-level results skip review."""
     notes = []
@@ -82,37 +92,44 @@ def match_name(checklist, query, *, fuzzy_cutoff=0.85, review_species_fallback=F
     review = bool(infra_notes)
     author = query.infra_author if infra else query.author
 
-    if rank in HISTORICAL_RANKS:
-        # «Salvia officinalis proles S. iberica»: the epithet may stand for a species of its own.
-        notes.append(f'historical rank «{query.infra_rank}» has no current equivalent; checked «{infra}» as a species')
-        rows = checklist.find(genus, infra)
-        if rows:
-            original, _ = _choose(rows, query.infra_author, notes)
-            return Match(query, original, 'historical-rank', 1.0, True, notes, rows)
-        notes.append(f'«{infra}» is not a species in WCVP either; species name used')
-        infra, historical = '', True
-    else:
-        historical = False
-
+    historical = rank in HISTORICAL_RANKS
+    if historical:
+        notes.append(f'historical rank «{query.infra_rank}»: confirm how the name is cited today')
+        review = True
     if infra:
-        rows = checklist.find(genus, species, infra, rank or None)
-        method = 'exact'
+        # Exact name first: WCVP also lists names at historical ranks («Stellaria media proles catalaunica»).
+        rows, method, score = checklist.find(genus, species, infra, rank or None), 'exact', 1.0
         if not rows:
             rows = checklist.find(genus, species, infra)
             if rows:
                 method = 'infra-rank-variant'
                 notes.append(f'rank differs: written «{query.infra_rank}», WCVP «{rows[0]["infraspecific_rank"]}»')
+        if not rows:
+            close = get_close_matches(infra, checklist.infra_keys(genus, species), n=3, cutoff=fuzzy_cutoff)
+            if close:
+                rows, method = checklist.find(genus, species, close[0]), 'infra-fuzzy'
+                score = SequenceMatcher(None, infra, close[0]).ratio()
+                notes.append(f'closest infraspecific spelling in the species: «{infra}» → «{close[0]}»')
         if rows:
             original, ambiguous = _choose(rows, author, notes)
             if original['taxon_status'] not in ('Accepted', 'Synonym'):
                 notes.append(f"WCVP status «{original['taxon_status']}»: confirm which name to cite")
                 ambiguous = True
-            return Match(query, original, method, 1.0, review or ambiguous or method != 'exact', notes, rows)
-        notes.append(f'«{query.text()}» not in WCVP; species name used')
-        method_prefix, review = 'species-fallback', review or review_species_fallback
+            return Match(query, original, method, round(score, 3), review or ambiguous or method != 'exact', notes, rows)
+        if historical:
+            # «Salvia officinalis proles S. iberica»: the epithet may stand for a species of its own.
+            rows = checklist.find(genus, infra)
+            if rows:
+                notes.append(f'«{infra}» checked as a species')
+                original, _ = _choose(rows, query.infra_author, notes)
+                return Match(query, original, 'historical-rank', 1.0, True, notes, rows)
+            notes.append(f'«{infra}» is not in WCVP as a species either; species name used')
+            method_prefix = 'historical-rank'
+        else:
+            notes.append(f'«{query.text()}» not in WCVP; species name used')
+            method_prefix, review = 'species-fallback', review or review_species_fallback
     else:
-        method_prefix = 'historical-rank' if historical else ''
-        review = review or historical
+        method_prefix = ''
 
     current_genus = genus
     rows, method, score = _species_level(checklist, genus, species, query.author, notes, fuzzy_cutoff=fuzzy_cutoff)
@@ -127,6 +144,7 @@ def match_name(checklist, query, *, fuzzy_cutoff=0.85, review_species_fallback=F
             score *= SequenceMatcher(None, genus, current_genus).ratio()
     if not rows:
         notes.append('no WCVP name found; check the spelling or the protologue')
+        notes += _hints(checklist, current_genus, species)
         return Match(query, None, 'none', 0.0, True, notes)
     original, ambiguous = _choose(rows, query.author, notes)
     if method_prefix and method == 'exact':
