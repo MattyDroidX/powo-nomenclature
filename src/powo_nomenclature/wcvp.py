@@ -105,9 +105,13 @@ class Checklist:
         # as_uri() escapes spaces and drive letters (file:///C:/...), so the read-only URI works on every OS.
         self.db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
         self.db.row_factory = sqlite3.Row
-        self.meta = dict(self.db.execute('SELECT key, value FROM meta'))
-        if self.meta.get('schema') != INDEX_SCHEMA:
-            raise ValueError('This index was built by another version; rebuild it: powo-nomenclature index WCVP_ZIP NEW_INDEX')
+        try:
+            self.meta = dict(self.db.execute('SELECT key, value FROM meta'))
+            if self.meta.get('schema') != INDEX_SCHEMA:
+                raise ValueError('This index was built by another version; rebuild it: powo-nomenclature index WCVP_ZIP NEW_INDEX')
+        except (ValueError, sqlite3.Error):
+            self.db.close()  # never keep a refused file open (Windows would not let it be replaced)
+            raise
         self._genera = None
         self._species = {}
 

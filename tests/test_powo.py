@@ -170,11 +170,14 @@ class ChecklistTests(unittest.TestCase):
     def test_indexes_from_another_version_are_refused_with_the_command_to_rebuild(self):
         import sqlite3
         old = Path(self.tmp.name) / 'old.sqlite'
-        with sqlite3.connect(old) as db:
+        from contextlib import closing
+        with closing(sqlite3.connect(old)) as db:
             db.execute('CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)')
             db.execute("INSERT INTO meta VALUES ('schema', '1')")
+            db.commit()
         with self.assertRaisesRegex(ValueError, 'rebuild it: powo-nomenclature index'):
             Checklist(old)
+        old.unlink()  # the refused index is not left open: it can be deleted (Windows)
 
     def test_cli_prints_json(self):
         out = io.StringIO()

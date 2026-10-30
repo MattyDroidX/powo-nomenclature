@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.1.0a2 — unreleased
+## 0.1.0a3 — unreleased
+
+- An index refused for being built by another version is closed before the error, so it can be deleted or replaced
+  on Windows. 0.1.0a2 was only published on TestPyPI; 0.1.0a3 carries all of its changes.
+
+## 0.1.0a2 — TestPyPI only
 
 Lessons from comparing the results with a spreadsheet filled with the help of a general-purpose AI:
 
